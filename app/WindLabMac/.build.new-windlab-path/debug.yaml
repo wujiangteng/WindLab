@@ -1,0 +1,92 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "WindLabMac-arm64-apple-macosx15.0-debug.exe": ["<WindLabMac-arm64-apple-macosx15.0-debug.exe>"]
+  "WindLabMac-arm64-apple-macosx15.0-debug.module": ["<WindLabMac-arm64-apple-macosx15.0-debug.module>"]
+  "main": ["<WindLabMac-arm64-apple-macosx15.0-debug.exe>","<WindLabMac-arm64-apple-macosx15.0-debug.module>"]
+  "test": ["<WindLabMac-arm64-apple-macosx15.0-debug.exe>","<WindLabMac-arm64-apple-macosx15.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac":
+    is-mutated: true
+commands:
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac-entitlement.plist"]
+    description: "Write auxiliary file /Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac-entitlement.plist"
+
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Charts.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/ConfigureDataSetView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/ContentView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/DistributionAnalysisView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/HistogramView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Models.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/TimeSeriesView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindLabMacApp.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindRoseView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindogParser.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DerivedSources/resource_bundle_accessor.swift"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/sources"]
+    description: "Write auxiliary file /Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/sources"
+
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.swift.o"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.product/Objects.LinkFileList"
+
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac_WindLabMac.bundle/parse_windog.py":
+    tool: copy-tool
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Python/parse_windog.py"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac_WindLabMac.bundle/parse_windog.py"]
+    description: "Copying /Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Python/parse_windog.py"
+
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<WindLabMac-arm64-apple-macosx15.0-debug.exe>":
+    tool: phony
+    inputs: ["<WindLabMac-arm64-apple-macosx15.0-debug.exe-CodeSigning>"]
+    outputs: ["<WindLabMac-arm64-apple-macosx15.0-debug.exe>"]
+
+  "<WindLabMac-arm64-apple-macosx15.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/Modules/WindLabMac.swiftmodule"]
+    outputs: ["<WindLabMac-arm64-apple-macosx15.0-debug.module>"]
+
+  "C.WindLabMac-arm64-apple-macosx15.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.product/Objects.LinkFileList"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/WindLabMac"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug","-o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac","-module-name","WindLabMac","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_WindLabMac_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.product/Objects.LinkFileList","-target","arm64-apple-macosx14.0","-Xlinker","-add_ast_path","-Xlinker","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/Modules/WindLabMac.swiftmodule","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.WindLabMac-arm64-apple-macosx15.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac-entitlement.plist"]
+    outputs: ["<WindLabMac-arm64-apple-macosx15.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/WindLabMac"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac-entitlement.plist","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac"]
+
+  "C.WindLabMac-arm64-apple-macosx15.0-debug.module":
+    tool: shell
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Charts.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/ConfigureDataSetView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/ContentView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/DistributionAnalysisView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/HistogramView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Models.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/TimeSeriesView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindLabMacApp.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindRoseView.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindogParser.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DerivedSources/resource_bundle_accessor.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","<WindLabMac-arm64-apple-macosx15.0-debug.module-resources>","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/sources"]
+    outputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.swift.o","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/Modules/WindLabMac.swiftmodule"]
+    description: "Compiling Swift Module 'WindLabMac' (11 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","WindLabMac","-emit-dependencies","-emit-module","-emit-module-path","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/Modules/WindLabMac.swiftmodule","-output-file-map","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/output-file-map.json","-incremental","-c","@/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/sources","-I","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-enable-batch-mode","-index-store-path","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-module-cache-path","/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","WindLabMac_main","-swift-version","6","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","windlabmac"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/","/Users/wudong/Documents/WindLab/app/WindLabMac/Package.swift","/Users/wudong/Documents/WindLab/app/WindLabMac/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
+  "WindLabMac-arm64-apple-macosx15.0-debug.module-resources":
+    tool: phony
+    inputs: ["/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac_WindLabMac.bundle/parse_windog.py"]
+    outputs: ["<WindLabMac-arm64-apple-macosx15.0-debug.module-resources>"]
+

@@ -1,0 +1,71 @@
+{
+  "": {
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/master.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Charts.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Charts.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/ConfigureDataSetView.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ConfigureDataSetView.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/ContentView.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/ContentView.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/DistributionAnalysisView.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DistributionAnalysisView.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/HistogramView.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/HistogramView.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/Models.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/Models.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/TimeSeriesView.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/TimeSeriesView.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindLabMacApp.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindLabMacApp.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindRoseView.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindRoseView.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/Sources/WindLabMac/WindogParser.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/WindogParser.swiftdeps"
+  },
+  "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/DerivedSources/resource_bundle_accessor.swift": {
+    "dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.d",
+    "object": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.swift.o",
+    "swiftmodule": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor~partial.swiftmodule",
+    "swift-dependencies": "/Users/wudong/Documents/WindLab/app/WindLabMac/.build/arm64-apple-macosx/debug/WindLabMac.build/resource_bundle_accessor.swiftdeps"
+  }
+}
