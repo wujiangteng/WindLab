@@ -5,7 +5,9 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State private var selectedTab = "Summary"
     @State private var propertySections: [PropertySection] = []
+    @State private var sourcePropertySections: [PropertySection] = []
     @State private var chartData = AppChartData.sample
+    @State private var sourceChartData = AppChartData.sample
     @State private var loadedFileName = "No file loaded"
     @State private var parserError: String?
     @State private var isLoadingWindog = false
@@ -80,7 +82,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showsConfiguration) {
             ConfigureDataSetView(configuration: dataSetConfiguration, fileURL: loadedFileURL) { updated in
-                dataSetConfiguration = updated
+                applyConfiguration(updated)
                 showsConfiguration = false
                 if let pendingURL = pendingTextImportURL {
                     pendingTextImportURL = nil
@@ -271,8 +273,14 @@ struct ContentView: View {
                     )
                 }
                 await MainActor.run {
+                    let parsedCharts = AppChartData(decoded: summary.charts)
+                    sourcePropertySections = sections
+                    sourceChartData = parsedCharts
                     propertySections = sections
-                    chartData = AppChartData(decoded: summary.charts)
+                    chartData = parsedCharts
+                    if preserveConfiguration {
+                        applyConfiguration(dataSetConfiguration)
+                    }
                     loadedFileName = summary.fileName
                     hasLoadedFile = true
                     isLoadingWindog = false
@@ -312,6 +320,13 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func applyConfiguration(_ updated: DataSetConfiguration) {
+        dataSetConfiguration = updated
+        let shear = ShearComputation(columns: updated.columns)
+        chartData = sourceChartData.applying(configuration: updated, shear: shear)
+        propertySections = sourcePropertySections.applying(dataSet: updated.dataSet, shear: shear)
     }
 
     private var chartsView: some View {
@@ -451,6 +466,222 @@ extension AppChartData {
             timeSeries: TimeSeriesData(decoded: decoded.timeSeries)
         )
     }
+
+    func applying(configuration: DataSetConfiguration, shear recalculatedShear: ShearComputation? = nil) -> AppChartData {
+        let visibleColumns = configuration.columns.filter(\.visible)
+        let visibleIDs = Set(visibleColumns.map(\.id))
+        let columnByID = Dictionary(uniqueKeysWithValues: visibleColumns.map { ($0.id, $0) })
+
+        func displayName(for id: String) -> String {
+            columnByID[id]?.label ?? id
+        }
+
+        func filterSeries(_ series: [NamedSeries], rename: Bool) -> [NamedSeries] {
+            series.compactMap { item in
+                guard visibleIDs.contains(item.name) else { return nil }
+                return NamedSeries(
+                    name: rename ? displayName(for: item.name) : item.name,
+                    colorName: columnByID[item.name]?.colorName ?? item.colorName,
+                    points: item.points
+                )
+            }
+        }
+
+        return AppChartData(
+            shear: recalculatedShear?.series ?? shear,
+            rose: rose,
+            monthly: filterSeries(monthly, rename: true),
+            diurnal: filterSeries(diurnal, rename: true),
+            timeSeries: timeSeries.applying(configuration: configuration)
+        )
+    }
+}
+
+extension TimeSeriesData {
+    func applying(configuration: DataSetConfiguration) -> TimeSeriesData {
+        let visibleColumns = configuration.columns.filter(\.visible)
+        let columnByID = Dictionary(uniqueKeysWithValues: visibleColumns.map { ($0.id, $0) })
+        let channels = channels.compactMap { channel -> TimeSeriesChannel? in
+            guard let column = columnByID[channel.id] else { return nil }
+            return TimeSeriesChannel(
+                id: channel.id,
+                name: column.label,
+                colorName: column.colorName,
+                defaultVisible: channel.defaultVisible,
+                unit: column.unit,
+                kind: channel.kind
+            )
+        }
+        return TimeSeriesData(
+            series: series.filter { columnByID[$0.name] != nil },
+            channels: channels,
+            monthLabels: monthLabels,
+            startDate: startDate,
+            endDate: endDate,
+            years: years
+        )
+    }
+}
+
+extension Array where Element == PropertySection {
+    func applying(dataSet: DataSetInformation, shear: ShearComputation? = nil) -> [PropertySection] {
+        map { section in
+            if section.title == "Wind shear coefficients", let shear {
+                return PropertySection(
+                    title: section.title,
+                    rows: [
+                        PropertyRow(label: "Power law exponent:", value: formatOptionalNumber(shear.powerLawExponent, digits: 3)),
+                        PropertyRow(label: "Surface roughness:", value: "\(formatRoughness(shear.roughnessLength)) m"),
+                        PropertyRow(label: "Roughness class:", value: formatOptionalNumber(shear.roughnessClass, digits: 2))
+                    ]
+                )
+            }
+            guard section.title == "Data set properties" else { return section }
+            return PropertySection(
+                title: section.title,
+                rows: section.rows.map { row in
+                    switch row.label {
+                    case "Latitude:":
+                        return PropertyRow(label: row.label, value: String(format: "N %.6f", dataSet.latitude))
+                    case "Longitude:":
+                        return PropertyRow(label: row.label, value: String(format: "E %.6f", dataSet.longitude))
+                    case "Elevation:":
+                        return PropertyRow(label: row.label, value: "\(formatDataSetNumber(dataSet.elevation, digits: 0)) m")
+                    case "Calm threshold:":
+                        return PropertyRow(label: row.label, value: "\(formatDataSetNumber(dataSet.calmThreshold, digits: 0)) m/s")
+                    default:
+                        return row
+                    }
+                }
+            )
+        }
+    }
+}
+
+struct ShearComputation {
+    let series: [NamedSeries]
+    let powerLawExponent: Double?
+    let roughnessLength: Double?
+    let roughnessClass: Double?
+
+    init(columns: [DataColumnConfiguration]) {
+        let measured = columns
+            .filter { $0.visible && $0.type == "Wind Speed" && $0.subtype == "Mean" }
+            .compactMap { column -> (height: Double, speed: Double)? in
+                guard let height = column.height, height > 0, let speed = parseStatNumber(column.mean), speed > 0 else {
+                    return nil
+                }
+                return (height, speed)
+            }
+            .sorted { $0.height < $1.height }
+
+        guard measured.count >= 2, let maxHeight = measured.map(\.height).max() else {
+            series = []
+            powerLawExponent = nil
+            roughnessLength = nil
+            roughnessClass = nil
+            return
+        }
+
+        let samples = (0...80).map { 1.0 + (maxHeight - 1.0) * Double($0) / 80.0 }
+        let powerFit = linearFit(measured.map { (log($0.height), log($0.speed)) })
+        let alpha = powerFit?.slope
+        let powerPoints = powerFit.map { fit in
+            samples.map { height in
+                SeriesPoint(x: exp(fit.intercept) * pow(height, fit.slope), y: height)
+            }
+        } ?? []
+
+        let logFit = linearFit(measured.map { (log($0.height), $0.speed) })
+        let roughness = logFit.flatMap { fit -> Double? in
+            guard fit.slope > 0 else { return nil }
+            return exp(-fit.intercept / fit.slope)
+        }
+        let logPoints = logFit.map { fit in
+            samples.map { height in
+                SeriesPoint(x: max(0, fit.intercept + fit.slope * log(height)), y: height)
+            }
+        } ?? []
+
+        series = [
+            NamedSeries(
+                name: "Measured data",
+                colorName: "measured",
+                points: measured.map { SeriesPoint(x: $0.speed, y: $0.height) }
+            ),
+            NamedSeries(name: "Power law fit", colorName: "power", points: powerPoints),
+            NamedSeries(name: "Log law fit", colorName: "log", points: logPoints)
+        ]
+        powerLawExponent = alpha
+        roughnessLength = roughness
+        if let roughness {
+            roughnessClass = roughnessClassValue(roughness)
+        } else {
+            roughnessClass = nil
+        }
+    }
+}
+
+private func parseStatNumber(_ value: String) -> Double? {
+    Double(value.replacingOccurrences(of: ",", with: ""))
+}
+
+private func linearFit(_ points: [(x: Double, y: Double)]) -> (intercept: Double, slope: Double)? {
+    let pairs = points.filter { $0.x.isFinite && $0.y.isFinite && $0.x > 0 && $0.y > 0 }
+    guard pairs.count >= 2 else { return nil }
+    let n = Double(pairs.count)
+    let sx = pairs.reduce(0) { $0 + $1.x }
+    let sy = pairs.reduce(0) { $0 + $1.y }
+    let sxx = pairs.reduce(0) { $0 + $1.x * $1.x }
+    let sxy = pairs.reduce(0) { $0 + $1.x * $1.y }
+    let denominator = n * sxx - sx * sx
+    guard abs(denominator) > 1e-12 else { return nil }
+    let slope = (n * sxy - sx * sy) / denominator
+    let intercept = (sy - slope * sx) / n
+    return (intercept, slope)
+}
+
+private func roughnessClassValue(_ roughnessLength: Double) -> Double? {
+    guard roughnessLength > 0, roughnessLength.isFinite else { return nil }
+    let table: [(Double, Double)] = [
+        (0.0, 0.0002), (0.5, 0.0024), (1.0, 0.03), (1.5, 0.055),
+        (2.0, 0.1), (2.5, 0.2), (3.0, 0.4), (3.5, 0.8), (4.0, 1.6)
+    ]
+    if roughnessLength <= table[0].1 { return table[0].0 }
+    if roughnessLength >= table[table.count - 1].1 { return table[table.count - 1].0 }
+    let logZ = log(roughnessLength)
+    for index in 0..<(table.count - 1) {
+        let a = table[index]
+        let b = table[index + 1]
+        if a.1 <= roughnessLength && roughnessLength <= b.1 {
+            let fraction = (logZ - log(a.1)) / (log(b.1) - log(a.1))
+            return a.0 + (b.0 - a.0) * fraction
+        }
+    }
+    return nil
+}
+
+private func formatOptionalNumber(_ value: Double?, digits: Int) -> String {
+    guard let value, value.isFinite else { return "-" }
+    return String(format: "%.\(digits)f", value)
+}
+
+private func formatRoughness(_ value: Double?) -> String {
+    guard let value, value.isFinite else { return "-" }
+    if value < 0.0001 {
+        return String(format: "%.6f", value)
+    }
+    if value < 0.01 {
+        return String(format: "%.5f", value)
+    }
+    return String(format: "%.4f", value)
+}
+
+private func formatDataSetNumber(_ value: Double, digits: Int) -> String {
+    if abs(value.rounded() - value) < 0.001 {
+        return String(Int(value.rounded()))
+    }
+    return String(format: "%.\(digits)f", value)
 }
 
 extension DataSetConfiguration {

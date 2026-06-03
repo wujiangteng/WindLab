@@ -164,7 +164,7 @@ struct WindRoseView: View {
                     }
                     .controlSize(.small)
                     DataColumnChecklist(
-                        channels: data.channels,
+                        channels: windRoseDataChannels,
                         selectedIDs: $selectedDataColumns,
                         enabledUnit: display == "total energy" ? "m/s" : nil
                     )
@@ -213,11 +213,15 @@ struct WindRoseView: View {
     }
 
     private var directionChannels: [TimeSeriesChannel] {
-        data.channels.filter { $0.kind == "wind_direction" }
+        data.channels.filter { isAverageWindDirectionChannel($0) }
     }
 
     private var speedChannels: [TimeSeriesChannel] {
-        data.channels.filter { $0.unit == "m/s" }
+        data.channels.filter { isAverageWindSpeedChannel($0) }
+    }
+
+    private var windRoseDataChannels: [TimeSeriesChannel] {
+        data.channels.filter { isAverageWindSpeedChannel($0) }
     }
 
     private var versusOptions: [String] {
@@ -252,11 +256,15 @@ struct WindRoseView: View {
     }
 
     private func resetDefaults() {
-        if directionID.isEmpty {
+        if directionID.isEmpty || !directionChannels.contains(where: { $0.id == directionID }) {
             directionID = directionChannels.first?.id ?? ""
         }
-        if selectedDataColumns.isEmpty {
-            selectedDataColumns = Set(speedChannels.map(\.id))
+        let availableSpeedIDs = Set(speedChannels.map(\.id))
+        let validSelection = selectedDataColumns.intersection(availableSpeedIDs)
+        if validSelection.isEmpty {
+            selectedDataColumns = availableSpeedIDs
+        } else if validSelection != selectedDataColumns {
+            selectedDataColumns = validSelection
         }
         if selectedYear == "-", let firstYear = data.years.first {
             selectedYear = String(firstYear)
@@ -348,6 +356,25 @@ struct WindRoseView: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: value)
+    }
+
+    private func isAverageWindSpeedChannel(_ channel: TimeSeriesChannel) -> Bool {
+        guard channel.unit == "m/s" else { return false }
+        return !isStatisticalChannel(channel)
+    }
+
+    private func isAverageWindDirectionChannel(_ channel: TimeSeriesChannel) -> Bool {
+        channel.kind == "wind_direction" && !isStatisticalChannel(channel)
+    }
+
+    private func isStatisticalChannel(_ channel: TimeSeriesChannel) -> Bool {
+        let name = channel.name.lowercased()
+        let excludedTokens = ["_sd", "_std", "_max", "_min", "_gust", " sd", " std", " max", " min", " gust", "std. dev", "standard deviation"]
+        if excludedTokens.contains(where: name.contains) {
+            return true
+        }
+        let chineseExcludedTokens = ["标准差", "最大", "最小", "极大", "极小", "阵风"]
+        return chineseExcludedTokens.contains(where: channel.name.contains)
     }
 }
 

@@ -705,6 +705,81 @@ private struct PreviewPanel<Content: View>: View {
     }
 }
 
+private struct PreviewAxisScale {
+    let range: ClosedRange<Double>
+    let ticks: [Double]
+}
+
+private func previewYAxisScale(for column: DataColumnConfiguration?, values: [Double], fallback: ClosedRange<Double> = 0...1) -> PreviewAxisScale {
+    switch column?.type {
+    case "Wind Direction":
+        return PreviewAxisScale(range: 0...360, ticks: [0, 90, 180, 270, 360])
+    case "Relative Humidity":
+        return PreviewAxisScale(range: 0...100, ticks: [0, 25, 50, 75, 100])
+    case "Air Pressure":
+        return niceAxis(values: values, fallback: 95...105, includeZero: false, maxTickCount: 5)
+    default:
+        return niceAxis(values: values, fallback: fallback, includeZero: column?.unit == "m/s", maxTickCount: 5)
+    }
+}
+
+private func previewPDFXAxisScale(for column: DataColumnConfiguration?, bars: [HistogramBar]) -> PreviewAxisScale {
+    switch column?.type {
+    case "Wind Direction":
+        return PreviewAxisScale(range: 0...360, ticks: [0, 90, 180, 270, 360])
+    case "Relative Humidity":
+        return PreviewAxisScale(range: 0...100, ticks: [0, 25, 50, 75, 100])
+    case "Air Pressure":
+        let values = bars.flatMap { [$0.x - $0.width / 2, $0.x + $0.width / 2] }
+        return niceAxis(values: values, fallback: 95...105, includeZero: false, maxTickCount: 5)
+    default:
+        let upper = max(bars.map { $0.x + $0.width / 2 }.max() ?? 1, 1)
+        return niceAxis(values: [0, upper], fallback: 0...1, includeZero: true, maxTickCount: 5)
+    }
+}
+
+private func niceAxis(values: [Double], fallback: ClosedRange<Double>, includeZero: Bool, maxTickCount: Int) -> PreviewAxisScale {
+    let finite = values.filter(\.isFinite)
+    guard var lower = finite.min(), var upper = finite.max() else {
+        return PreviewAxisScale(range: fallback, ticks: niceTicks(for: fallback, maxTickCount: maxTickCount))
+    }
+    if includeZero {
+        lower = min(0, lower)
+        upper = max(0, upper)
+    }
+    if abs(upper - lower) < 1e-9 {
+        let padding = max(abs(upper) * 0.1, 1)
+        lower -= padding
+        upper += padding
+    }
+    let padding = max((upper - lower) * 0.06, 1e-9)
+    lower = includeZero ? min(0, lower) : lower - padding
+    upper += padding
+    let ticks = niceTicks(for: lower...upper, maxTickCount: maxTickCount)
+    return PreviewAxisScale(range: (ticks.first ?? lower)...(ticks.last ?? upper), ticks: ticks)
+}
+
+private func niceTicks(for range: ClosedRange<Double>, maxTickCount: Int) -> [Double] {
+    let span = max(range.upperBound - range.lowerBound, 1e-9)
+    let rawStep = span / Double(max(maxTickCount - 1, 1))
+    let magnitude = pow(10, floor(log10(rawStep)))
+    let residual = rawStep / magnitude
+    let niceResidual: Double
+    if residual <= 1 {
+        niceResidual = 1
+    } else if residual <= 2 {
+        niceResidual = 2
+    } else if residual <= 5 {
+        niceResidual = 5
+    } else {
+        niceResidual = 10
+    }
+    let step = niceResidual * magnitude
+    let start = floor(range.lowerBound / step) * step
+    let end = ceil(range.upperBound / step) * step
+    return Array(stride(from: start, through: end + step * 0.5, by: step)).filter { $0 >= start - 1e-9 && $0 <= end + 1e-9 }
+}
+
 private struct PDFPreviewChart: View {
     let column: DataColumnConfiguration?
     let isLoading: Bool
@@ -714,25 +789,22 @@ private struct PDFPreviewChart: View {
         PreviewPanel(title: "PDF") {
             GeometryReader { geometry in
                 let bars = column?.preview.pdf ?? []
-                let xMin = 0.0
-                let xMax = ceilToMultiple(max(bars.map { $0.x + $0.width / 2 }.max() ?? 1, 5), step: 5)
-                let yMax = ceilToMultiple(max(bars.map(\.y).max() ?? 1, 2), step: 2)
-                let xTicks = multipleTicks(through: xMax, step: 5)
-                let yTicks = multipleTicks(through: yMax, step: 2)
+                let xScale = previewPDFXAxisScale(for: column, bars: bars)
+                let yScale = niceAxis(values: bars.map(\.y), fallback: 0...1, includeZero: true, maxTickCount: 5)
                 let frame = PlotFrame(size: geometry.size, left: 36, right: 8, top: 8, bottom: 32)
                 ZStack(alignment: .topLeading) {
-                    PreviewGrid(frame: frame, xTicks: xTicks, yTicks: yTicks, xRange: xMin...xMax, yRange: 0...yMax)
+                    PreviewGrid(frame: frame, xTicks: xScale.ticks, yTicks: yScale.ticks, xRange: xScale.range, yRange: yScale.range)
                     ForEach(bars) { bar in
-                        let x0 = frame.x(bar.x - bar.width / 2, in: xMin...xMax)
-                        let x1 = frame.x(bar.x + bar.width / 2, in: xMin...xMax)
-                        let y = frame.y(bar.y, in: 0...yMax)
+                        let x0 = frame.x(bar.x - bar.width / 2, in: xScale.range)
+                        let x1 = frame.x(bar.x + bar.width / 2, in: xScale.range)
+                        let y = frame.y(bar.y, in: yScale.range)
                         Rectangle()
                             .fill(Color.chartColor(column?.colorName ?? "primary"))
                             .overlay(Rectangle().stroke(.black, lineWidth: 0.5))
                             .frame(width: max(x1 - x0, 1), height: frame.bottomY - y)
                             .position(x: (x0 + x1) / 2, y: y + (frame.bottomY - y) / 2)
                     }
-                    PreviewAxes(frame: frame, xTicks: xTicks, yTicks: yTicks, xRange: xMin...xMax, yRange: 0...yMax, xLabel: "Value (\(column?.unit ?? "-"))", yLabel: "Frequency (%)")
+                    PreviewAxes(frame: frame, xTicks: xScale.ticks, yTicks: yScale.ticks, xRange: xScale.range, yRange: yScale.range, xLabel: "Value (\(column?.unit ?? "-"))", yLabel: "Frequency (%)")
                     PreviewStatusOverlay(isLoading: isLoading, errorMessage: errorMessage, isEmpty: bars.isEmpty)
                 }
             }
@@ -750,23 +822,21 @@ private struct DiurnalPreviewChart: View {
             GeometryReader { geometry in
                 let points = column?.preview.diurnal ?? []
                 let values = points.map(\.y)
-                let yMin = min(0, values.min() ?? 0)
-                let yMax = ceilToMultiple(max(values.max() ?? 1, 2), step: 2)
-                let yTicks = multipleTicks(through: yMax, step: 2)
+                let yScale = previewYAxisScale(for: column, values: values, fallback: 0...2)
                 let frame = PlotFrame(size: geometry.size, left: 36, right: 8, top: 8, bottom: 32)
                 ZStack(alignment: .topLeading) {
-                    PreviewGrid(frame: frame, xTicks: [0, 6, 12, 18, 24], yTicks: yTicks, xRange: 0...24, yRange: yMin...yMax)
+                    PreviewGrid(frame: frame, xTicks: [0, 6, 12, 18, 24], yTicks: yScale.ticks, xRange: 0...24, yRange: yScale.range)
                     ForEach(points) { point in
                         let x0 = frame.x(point.x, in: 0...24)
                         let x1 = frame.x(point.x + 1, in: 0...24)
-                        let y = frame.y(point.y, in: yMin...yMax)
+                        let y = frame.y(point.y, in: yScale.range)
                         Rectangle()
                             .fill(Color.chartColor(column?.colorName ?? "primary"))
                             .overlay(Rectangle().stroke(.black, lineWidth: 0.5))
                             .frame(width: max(x1 - x0 - 1, 1), height: frame.bottomY - y)
                             .position(x: (x0 + x1) / 2, y: y + (frame.bottomY - y) / 2)
                     }
-                    PreviewAxes(frame: frame, xTicks: [0, 6, 12, 18, 24], yTicks: yTicks, xRange: 0...24, yRange: yMin...yMax, xLabel: "Time Of Day", yLabel: "Mean Value (\(column?.unit ?? "-"))")
+                    PreviewAxes(frame: frame, xTicks: [0, 6, 12, 18, 24], yTicks: yScale.ticks, xRange: 0...24, yRange: yScale.range, xLabel: "Time Of Day", yLabel: "Mean Value (\(column?.unit ?? "-"))")
                     PreviewStatusOverlay(isLoading: isLoading, errorMessage: errorMessage, isEmpty: points.isEmpty)
                 }
             }
@@ -785,20 +855,18 @@ private struct MonthlyStatisticsPreviewChart: View {
             GeometryReader { geometry in
                 let stats = column?.preview.monthly ?? []
                 let values = stats.flatMap { [$0.min, $0.q1, $0.mean, $0.q3, $0.max] }
-                let yMin = min(0, values.min() ?? 0)
-                let yMax = ceilToMultiple(max(values.max() ?? 1, 5), step: 5)
-                let yTicks = multipleTicks(through: yMax, step: 5)
+                let yScale = previewYAxisScale(for: column, values: values, fallback: 0...5)
                 let xTicks = Array(0..<12).map { Double($0) + 0.5 }
                 let frame = PlotFrame(size: geometry.size, left: 36, right: 42, top: 8, bottom: 32)
                 ZStack(alignment: .topLeading) {
-                    PreviewGrid(frame: frame, xTicks: xTicks, yTicks: yTicks, xRange: 0...12, yRange: yMin...yMax)
+                    PreviewGrid(frame: frame, xTicks: xTicks, yTicks: yScale.ticks, xRange: 0...12, yRange: yScale.range)
                     ForEach(stats) { item in
                         let center = frame.x(item.x + 0.5, in: 0...12)
-                        let minY = frame.y(item.min, in: yMin...yMax)
-                        let maxY = frame.y(item.max, in: yMin...yMax)
-                        let q1Y = frame.y(item.q1, in: yMin...yMax)
-                        let q3Y = frame.y(item.q3, in: yMin...yMax)
-                        let meanY = frame.y(item.mean, in: yMin...yMax)
+                        let minY = frame.y(item.min, in: yScale.range)
+                        let maxY = frame.y(item.max, in: yScale.range)
+                        let q1Y = frame.y(item.q1, in: yScale.range)
+                        let q3Y = frame.y(item.q3, in: yScale.range)
+                        let meanY = frame.y(item.mean, in: yScale.range)
                         Path { path in
                             path.move(to: CGPoint(x: center, y: maxY))
                             path.addLine(to: CGPoint(x: center, y: minY))
@@ -815,7 +883,7 @@ private struct MonthlyStatisticsPreviewChart: View {
                         }
                         .stroke(.black, lineWidth: 1)
                     }
-                    PreviewAxes(frame: frame, xTicks: xTicks, yTicks: yTicks, xRange: 0...12, yRange: yMin...yMax, xLabels: labels, xLabel: "", yLabel: "")
+                    PreviewAxes(frame: frame, xTicks: xTicks, yTicks: yScale.ticks, xRange: 0...12, yRange: yScale.range, xLabels: labels, xLabel: "", yLabel: "")
                     VStack(alignment: .leading, spacing: 2) {
                         Text("max")
                         Text("q3")

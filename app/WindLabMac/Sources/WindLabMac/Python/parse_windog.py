@@ -13,7 +13,7 @@ import tempfile
 import zlib
 
 
-PARSER_VERSION = "2026-06-01-time-header-scan-v1"
+PARSER_VERSION = "2026-06-02-channel-stat-filter-v6"
 
 VALID_UNITS = {"m/s", "W/m2", "deg", "°", "%RH", "C", "kPa"}
 
@@ -229,24 +229,30 @@ def read_channel(payload, layout):
 
 def infer_height(name):
     match = re.search(r"(\d+(?:\.\d+)?)\s*m", name, re.IGNORECASE)
-    if not match:
-        match = re.search(r"(\d+(?:\.\d+)?)", name)
-    return float(match.group(1)) if match else None
+    if match:
+        return float(match.group(1))
+    candidates = []
+    for match in re.finditer(r"\b(\d+(?:\.\d+)?)\b", name):
+        prefix = name[max(0, match.start() - 8) : match.start()].lower()
+        if prefix.endswith("class") or prefix.endswith("ch") or prefix.endswith("channel"):
+            continue
+        candidates.append(float(match.group(1)))
+    return candidates[-1] if candidates else None
 
 
 def infer_kind(name, unit):
     lowered = name.lower()
-    if "humidity" in lowered or "%rh" in lowered:
+    if "humidity" in lowered or "%rh" in lowered or "湿度" in name:
         return "humidity"
-    if unit == "C":
+    if unit == "C" or "温度" in name:
         return "temperature"
-    if unit == "kPa":
+    if unit == "kPa" or "气压" in name or "压力" in name:
         return "pressure"
-    if unit == "m/s":
+    if unit == "m/s" or "风速" in name:
         return "wind_speed_synthesized" if "synthesized" in lowered else "wind_speed"
     if unit == "W/m2":
         return "power_density"
-    if unit in ("deg", "°"):
+    if unit in ("deg", "°") or "风向" in name:
         return "wind_direction"
     return "unknown"
 
@@ -265,7 +271,8 @@ def normalize_channel(channel):
     channel["name"] = name
     channel["unit"] = unit
     channel["kind"] = infer_kind(name, unit)
-    channel["height"] = infer_height(name)
+    channel["height"] = infer_height(name) or channel.get("height")
+    channel["subtype"] = channel.get("subtype") or statistic_subtype_from_text(name) or "Mean"
     return channel
 
 
@@ -501,6 +508,7 @@ def load_text_channels(path):
             channels.append(channel)
     if not channels:
         raise ValueError("text data file contains no supported numeric data columns")
+    infer_wind_speed_subtypes(channels)
     return 0, None, channels, parsed_rows[0][0], time_step_minutes, row_count, metadata
 
 
@@ -523,6 +531,53 @@ def previous_name(payload, unit_offset):
         if any(character.isalnum() or "\u4e00" <= character <= "\u9fff" for character in value):
             best = value.strip()
     return best
+
+
+def nearby_text_values(payload, center, before=48, after=96):
+    values = []
+    start = max(0, center - before)
+    end = min(len(payload), center + after)
+    for offset in range(start, end):
+        length = payload[offset]
+        if not 1 <= length <= 80 or offset + 1 + length > end:
+            continue
+        try:
+            value = payload[offset + 1 : offset + 1 + length].decode("gb18030")
+        except UnicodeDecodeError:
+            continue
+        value = value.strip("\x00 ")
+        if not value or any(ord(character) < 32 for character in value):
+            continue
+        if any(character.isalnum() or "\u4e00" <= character <= "\u9fff" for character in value):
+            values.append(value)
+    return values
+
+
+def statistic_subtype_from_text(text):
+    name = text.lower()
+    tokens = [token for token in re.split(r"[^a-z0-9\u4e00-\u9fff]+", name) if token]
+    if any(token in ("sd", "std", "stdev") for token in tokens) or "std. dev" in name or "standard deviation" in name or "标准差" in text:
+        return "Std. dev."
+    if any(token == "min" for token in tokens) or "_min" in name or "最小" in text or "极小" in text:
+        return "Min"
+    if any(token == "max" for token in tokens) or "_max" in name or "最大" in text or "极大" in text:
+        return "Max"
+    if any(token == "gust" for token in tokens) or "_gust" in name or "阵风" in text:
+        return "Gust"
+    return None
+
+
+def statistic_subtype_from_context(text_values):
+    joined = " ".join(text_values)
+    return statistic_subtype_from_text(joined)
+
+
+def height_from_context(text_values):
+    candidates = [infer_height(value) for value in text_values]
+    candidates = [value for value in candidates if value is not None]
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def scan_unit_channels(payload):
@@ -569,13 +624,16 @@ def scan_unit_channels(payload):
         seen_starts.add(data_start)
 
         values = read_f32_values(payload, data_start, count)
+        text_context = nearby_text_values(payload, offset)
         name = previous_name(payload, offset) or f"{unit} channel at 0x{offset:x}"
+        subtype = statistic_subtype_from_context(text_context) or "Mean"
         channels.append(
             normalize_channel({
                 "name": name,
                 "unit": unit,
                 "kind": infer_kind(name, unit),
-                "height": infer_height(name),
+                "height": infer_height(name) or height_from_context(text_context),
+                "subtype": subtype,
                 "count": count,
                 "values": values,
             })
@@ -674,42 +732,97 @@ def visible_channel(channel):
     return True
 
 
+def is_statistical_channel(channel):
+    if channel.get("subtype") not in (None, "", "Mean"):
+        return True
+    name = channel["name"].lower()
+    separated_tokens = re.split(r"[^a-z0-9\u4e00-\u9fff]+", name)
+    statistical_tokens = {"sd", "std", "max", "min", "gust"}
+    if any(token in statistical_tokens for token in separated_tokens):
+        return True
+    if any(token in name for token in ("_sd", "_std", "_max", "_min", "_gust", "std. dev", "standard deviation")):
+        return True
+    if any(token in channel["name"] for token in ("标准差", "最大", "最小", "极大", "极小", "阵风")):
+        return True
+    return False
+
+
+def finite_aligned_sample(group, max_samples=600):
+    count = min((channel["count"] for channel in group), default=0)
+    if count <= 0:
+        return []
+    step = max(1, count // max_samples)
+    rows = []
+    for index in range(0, count, step):
+        values = [channel["values"][index] for channel in group]
+        if all(math.isfinite(value) and 0 <= value <= 80 for value in values):
+            rows.append(values)
+    return rows
+
+
+def infer_wind_speed_subtypes(channels):
+    groups = {}
+    for channel in channels:
+        if channel["unit"] != "m/s" or channel.get("subtype") not in (None, "", "Mean"):
+            continue
+        key = (channel.get("height"), channel["count"])
+        groups.setdefault(key, []).append(channel)
+
+    for group in groups.values():
+        if len(group) < 4:
+            continue
+        samples = finite_aligned_sample(group)
+        if len(samples) < 30:
+            continue
+
+        means = [mean(channel["values"], lower=0, upper=80) for channel in group]
+        if any(value is None for value in means):
+            continue
+        ordered = sorted(range(len(group)), key=lambda index: means[index])
+        min_index = ordered[0]
+        sd_index = ordered[1]
+        mean_index = ordered[-2]
+        max_index = ordered[-1]
+
+        relation_count = 0
+        for row in samples:
+            if row[max_index] >= row[mean_index] >= row[min_index] and row[sd_index] <= row[mean_index]:
+                relation_count += 1
+        if relation_count / len(samples) < 0.85:
+            continue
+
+        group[min_index]["subtype"] = "Min"
+        group[sd_index]["subtype"] = "Std. dev."
+        group[mean_index]["subtype"] = "Mean"
+        group[max_index]["subtype"] = "Max"
+
+
 def is_average_wind_speed_channel(channel):
     if channel["unit"] != "m/s":
         return False
-    name = channel["name"].lower()
-    excluded_tokens = (
-        "_sd",
-        "_std",
-        "_max",
-        "_min",
-        "_gust",
-        " sd",
-        " std",
-        " max",
-        " min",
-        " gust",
-        "humidity",
-        "%rh",
-        "analog",
-    )
-    if any(token in name for token in excluded_tokens):
+    if is_statistical_channel(channel):
         return False
-    return "speed" in name or "wind" in name or "anem" in name
+    return True
+
+
+def is_average_wind_direction_channel(channel):
+    if channel["kind"] != "wind_direction":
+        return False
+    return not is_statistical_channel(channel)
 
 
 def selected_speed_channels(channels, preferred_height=None):
     wind_channels = [
         channel
         for channel in channels
-        if is_average_wind_speed_channel(channel) and channel.get("height") is not None and visible_channel(channel)
+        if is_average_wind_speed_channel(channel) and visible_channel(channel)
     ]
     measured = [channel for channel in wind_channels if channel["kind"] == "wind_speed"]
     source = measured or wind_channels
     source = sorted(source, key=lambda channel: channel.get("height") or 0)
     if not source:
         return []
-    return sorted(wind_channels, key=lambda channel: channel.get("height") or 0, reverse=True)
+    return sorted(wind_channels, key=lambda channel: (channel.get("height") is None, -(channel.get("height") or 0), channel["name"]))
 
 
 def monthly_means(channel, start_date, time_step_minutes):
@@ -1011,14 +1124,16 @@ def data_column_type(channel):
 
 
 def data_column_subtype(channel):
+    if channel.get("subtype"):
+        return channel["subtype"]
     name = channel["name"].lower()
-    if any(token in name for token in ("_sd", "_std", " std")):
+    if any(token in name for token in ("_sd", "_std", " std", "sd", "std")) or "标准差" in channel["name"]:
         return "Std. dev."
-    if any(token in name for token in ("_min", " min")):
+    if any(token in name for token in ("_min", " min")) or "最小" in channel["name"] or "极小" in channel["name"]:
         return "Min"
-    if any(token in name for token in ("_max", " max")):
+    if any(token in name for token in ("_max", " max")) or "最大" in channel["name"] or "极大" in channel["name"]:
         return "Max"
-    if any(token in name for token in ("_gust", " gust")):
+    if any(token in name for token in ("_gust", " gust")) or "阵风" in channel["name"]:
         return "Gust"
     return "Mean"
 
@@ -1203,7 +1318,7 @@ def time_series_channels(channels):
     listed_channels = [
         channel
         for channel in channels
-        if channel["count"] > 0 and visible_channel(channel) and channel["unit"] in VALID_UNITS
+        if channel["count"] > 0 and visible_channel(channel) and channel["unit"] in VALID_UNITS and not is_statistical_channel(channel)
     ]
     listed_channels = sorted(
         listed_channels,
@@ -1256,6 +1371,7 @@ def load_windog_channels(path):
     scanned_channels = scan_unit_channels(payload)
     channels = scanned_channels or fixed_channels
     channels.extend(scan_direction_channels(payload))
+    infer_wind_speed_subtypes(channels)
     return offset, payload, channels
 
 
@@ -1367,10 +1483,14 @@ def build_wind_rose_series(path, display, versus, sectors, direction_id, data_id
     _, _, channels, start_date, time_step_minutes, row_count, _ = load_dataset(path)
     channels = full_length_visible_channels(channels, row_count)
     channel_map = {channel["name"]: channel for channel in channels}
-    direction_channels = [channel for channel in channels if channel["kind"] == "wind_direction"]
-    speed_channels = [channel for channel in channels if channel["unit"] == "m/s"]
+    direction_channels = [channel for channel in channels if is_average_wind_direction_channel(channel)]
+    speed_channels = [channel for channel in channels if is_average_wind_speed_channel(channel)]
     selected_direction = channel_map.get(direction_id) or (direction_channels[0] if direction_channels else None)
-    selected_speed_channels = [channel_map[item] for item in data_ids if item in channel_map and channel_map[item]["unit"] == "m/s"]
+    selected_speed_channels = [
+        channel_map[item]
+        for item in data_ids
+        if item in channel_map and is_average_wind_speed_channel(channel_map[item])
+    ]
     if not selected_speed_channels:
         selected_speed_channels = speed_channels[:1]
     indices = filtered_indices(channels, start_date, time_step_minutes, row_count, filter_mode, year, month, range_start, range_end, filter_column, filter_min, filter_max)
@@ -1683,12 +1803,12 @@ def build_chart_data(channels, start_date, time_step_minutes, preferred_height):
     direction_channels = [
         channel
         for channel in channels
-        if channel["kind"] == "wind_direction"
+        if is_average_wind_direction_channel(channel)
         and visible_channel(channel)
         and (target_count is None or channel["count"] == target_count)
     ]
     if not direction_channels:
-        direction_channels = [channel for channel in channels if channel["kind"] == "wind_direction" and visible_channel(channel)]
+        direction_channels = [channel for channel in channels if is_average_wind_direction_channel(channel) and visible_channel(channel)]
     direction_channels = sorted(direction_channels, key=lambda channel: channel.get("height") or 0, reverse=True)
     if not direction_channels:
         direction_channels = []
@@ -1736,6 +1856,10 @@ def nearest_height_channel(channels, target_height):
     if not candidates:
         return None
     return min(candidates, key=lambda channel: abs((channel.get("height") or 0) - target_height))
+
+
+def representative_channel(channels, target_height):
+    return nearest_height_channel(channels, target_height) or (channels[0] if channels else None)
 
 
 def exact_height_channel(channels, target_height):
@@ -1792,15 +1916,19 @@ def build_sections(path, payload, compressed_offset, channels, start_date=None, 
     data_point_count = sum(channel["count"] for channel in all_full_length_channels)
     channels = full_length_channels
     wind_speed_channels = [channel for channel in channels if is_average_wind_speed_channel(channel)]
-    mean_speed_channel = nearest_height_channel(wind_speed_channels, 100)
+    mean_speed_channel = representative_channel(wind_speed_channels, 100)
     power_density_channels = [channel for channel in channels if channel["kind"] == "power_density"]
     power_density_channel = exact_height_channel(power_density_channels, 50)
-    power_speed_channel = exact_height_channel(wind_speed_channels, 50) or nearest_height_channel(wind_speed_channels, 50)
+    power_speed_channel = exact_height_channel(wind_speed_channels, 50) or representative_channel(wind_speed_channels, 50)
 
     end_date = start_date + dt.timedelta(minutes=time_step_minutes * row_count)
     mean_wind = mean(mean_speed_channel["values"], lower=0, upper=80) if mean_speed_channel else None
-    mean_height = mean_speed_channel.get("height") if mean_speed_channel else 100
-    height_label = f"{int(mean_height)} m" if mean_height and mean_height == int(mean_height) else f"{mean_height:g} m"
+    mean_height = mean_speed_channel.get("height") if mean_speed_channel else None
+    if mean_height is None:
+        mean_label = "Mean wind speed:"
+    else:
+        height_label = f"{int(mean_height)} m" if mean_height == int(mean_height) else f"{mean_height:g} m"
+        mean_label = f"Mean at {height_label}:"
     charts = build_chart_data(channels, start_date, time_step_minutes, mean_height)
     charts["timeSeries"] = build_time_series(channels, start_date, time_step_minutes, row_count)
     shear_parameters = charts.get("shear", {}).get("parameters", {})
@@ -1839,7 +1967,7 @@ def build_sections(path, payload, compressed_offset, channels, start_date=None, 
         {
             "title": "Wind speed and power",
             "rows": [
-                {"label": f"Mean at {height_label}:", "value": f"{fmt_number(mean_wind, 2)} m/s"},
+                {"label": mean_label, "value": f"{fmt_number(mean_wind, 2)} m/s"},
                 {"label": "Power density (50m):", "value": f"{fmt_int(mean_power or 0)} W/m2" if mean_power is not None else "-"},
                 {"label": "Wind power class:", "value": wind_power_class(mean_power)},
             ],
