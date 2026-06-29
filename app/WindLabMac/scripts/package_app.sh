@@ -92,6 +92,55 @@ cat > "${CONTENTS_DIR}/Info.plist" <<EOF
   <true/>
   <key>NSHumanReadableCopyright</key>
   <string>Copyright © 2026 WindLab.</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Windographer File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.windlab.windog</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Text Wind Data</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.plain-text</string>
+        <string>public.comma-separated-values-text</string>
+        <string>public.tab-separated-values-text</string>
+      </array>
+    </dict>
+  </array>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.windlab.windog</string>
+      <key>UTTypeDescription</key>
+      <string>Windographer File</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>windog</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
 EOF
 
 if [[ -n "${ICON_FILE}" ]]; then

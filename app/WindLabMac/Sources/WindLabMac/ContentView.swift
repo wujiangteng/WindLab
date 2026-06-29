@@ -3,6 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @EnvironmentObject private var fileOpenCoordinator: WindLabFileOpenCoordinator
+
     @State private var selectedTab = "Summary"
     @State private var propertySections: [PropertySection] = []
     @State private var sourcePropertySections: [PropertySection] = []
@@ -70,7 +72,8 @@ struct ContentView: View {
                 EmptyFileView(
                     parserError: parserError,
                     isLoading: isLoadingWindog,
-                    openAction: openWindogFile
+                    openAction: openWindogFile,
+                    openURLAction: openWindogURL
                 )
             }
         }
@@ -101,6 +104,15 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openWindogRequested)) { _ in
             openWindogFile()
+        }
+        .onAppear {
+            openPendingWindogURL()
+        }
+        .onOpenURL { url in
+            openWindogURL(url)
+        }
+        .onReceive(fileOpenCoordinator.$requestedURL.compactMap { $0 }) { url in
+            openPendingWindogURL(url)
         }
     }
 
@@ -211,12 +223,25 @@ struct ContentView: View {
             guard response == .OK, let fileURL = panel.url else {
                 return
             }
-            if isTextDataFile(fileURL) {
-                configureTextImport(fileURL)
-            } else {
-                loadWindog(fileURL)
-            }
+            openWindogURL(fileURL)
         }
+    }
+
+    private func openWindogURL(_ fileURL: URL) {
+        if isTextDataFile(fileURL) {
+            configureTextImport(fileURL)
+        } else {
+            loadWindog(fileURL)
+        }
+    }
+
+    private func openPendingWindogURL(_ url: URL? = nil) {
+        guard let fileURL = url ?? fileOpenCoordinator.requestedURL else {
+            return
+        }
+
+        fileOpenCoordinator.requestedURL = nil
+        openWindogURL(fileURL)
     }
 
     private func isTextDataFile(_ fileURL: URL) -> Bool {
@@ -822,6 +847,9 @@ struct EmptyFileView: View {
     let parserError: String?
     let isLoading: Bool
     let openAction: () -> Void
+    let openURLAction: (URL) -> Void
+
+    @State private var isDropTargeted = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -867,6 +895,42 @@ struct EmptyFileView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.windowBackgroundColor))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(isDropTargeted ? Color.accentColor : Color.clear, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                .padding(24)
+        }
+        .contentShape(Rectangle())
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTargeted) { providers in
+            guard !isLoading else { return false }
+            return openDroppedFile(from: providers)
+        }
+    }
+
+    private func openDroppedFile(from providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
+            return false
+        }
+
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL?
+            if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else if let droppedURL = item as? URL {
+                url = droppedURL
+            } else if let path = item as? String {
+                url = URL(string: path)?.isFileURL == true ? URL(string: path) : URL(fileURLWithPath: path)
+            } else {
+                url = nil
+            }
+
+            guard let url else { return }
+            DispatchQueue.main.async {
+                openURLAction(url)
+            }
+        }
+
+        return true
     }
 }
 
