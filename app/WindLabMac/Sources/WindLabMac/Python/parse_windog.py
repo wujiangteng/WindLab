@@ -70,8 +70,16 @@ def read_u32(buffer, offset):
     return struct.unpack_from("<I", buffer, offset)[0]
 
 
+def write_u32(buffer, offset, value):
+    struct.pack_into("<I", buffer, offset, value)
+
+
 def read_f32(buffer, offset):
     return struct.unpack_from("<f", buffer, offset)[0]
+
+
+def write_f32_values(buffer, offset, values):
+    struct.pack_into(f"<{len(values)}f", buffer, offset, *values)
 
 
 def read_f32_values(buffer, offset, count):
@@ -80,6 +88,10 @@ def read_f32_values(buffer, offset, count):
 
 def read_f64(buffer, offset):
     return struct.unpack_from("<d", buffer, offset)[0]
+
+
+def write_f64(buffer, offset, value):
+    struct.pack_into("<d", buffer, offset, value)
 
 
 def decode_string(buffer, offset):
@@ -97,6 +109,11 @@ def is_clean_text(value):
 def ole_date_to_datetime(value):
     base = dt.datetime(1899, 12, 30)
     return base + dt.timedelta(days=value)
+
+
+def datetime_to_ole_date(value):
+    base = dt.datetime(1899, 12, 30)
+    return (value - base).total_seconds() / 86400
 
 
 def is_reasonable_datetime(value):
@@ -256,6 +273,7 @@ def read_channel(payload, layout):
         "name_offset": layout["name_offset"],
         "unit_offset": layout.get("unit_offset"),
         "count_offset": layout["count_offset"],
+        "data_start": start,
     }
 
 
@@ -575,10 +593,13 @@ def previous_name_with_offset(payload, unit_offset):
             value = payload[offset + 1 : offset + 1 + length].decode("gb18030")
         except UnicodeDecodeError:
             continue
+        value = value.strip("\x00 ")
         if any(ord(character) < 32 for character in value):
             continue
         if any(character.isalnum() or "\u4e00" <= character <= "\u9fff" for character in value):
-            best = (value.strip(), offset)
+            if offset + 1 + length == unit_offset:
+                return value, offset
+            best = (value, offset)
     return best
 
 
@@ -693,6 +714,7 @@ def scan_unit_channels(payload):
                 "name_offset": name_offset,
                 "unit_offset": offset,
                 "count_offset": count_offset,
+                "data_start": data_start,
             })
         )
     return channels
@@ -761,6 +783,7 @@ def scan_sparse_unit_channels(payload):
                 "name_offset": name_offset,
                 "unit_offset": offset,
                 "count_offset": count_offset,
+                "data_start": data_start,
             })
         )
     return channels
@@ -825,6 +848,7 @@ def scan_direction_channels(payload):
                     "name_offset": offset,
                     "unit_offset": None,
                     "count_offset": count_offset,
+                    "data_start": data_start,
                 })
             )
             break
@@ -1508,7 +1532,14 @@ def load_windog_channels(path):
     channels = scanned_channels or fixed_channels
     if not channels:
         channels = scan_sparse_unit_channels(payload)
-    channels.extend(scan_direction_channels(payload))
+    seen_data_starts = {channel.get("data_start") for channel in channels if channel.get("data_start") is not None}
+    for channel in scan_direction_channels(payload):
+        data_start = channel.get("data_start")
+        if data_start is not None and data_start in seen_data_starts:
+            continue
+        channels.append(channel)
+        if data_start is not None:
+            seen_data_starts.add(data_start)
     infer_wind_speed_subtypes(channels)
     return offset, payload, channels
 
@@ -1560,11 +1591,116 @@ def build_configuration_only(path):
     return build_configuration(path, full_length_channels, start_date, end_date, time_step_minutes, row_count, metadata)
 
 
+def configured_channels_for_export(channels, row_count, configuration):
+    source_channels = {
+        channel["name"]: channel
+        for channel in channels
+        if row_count and channel["count"] == row_count and channel["unit"] in VALID_UNITS
+    }
+    exported = []
+    used_names = set()
+    used_source_names = set()
+    for column in configuration.get("columns", []):
+        source_name = column.get("id") or ""
+        source = source_channels.get(source_name)
+        if not source:
+            continue
+        used_source_names.add(source_name)
+        unit = (column.get("unit") or source["unit"]).strip()
+        if unit not in VALID_UNITS:
+            raise ValueError(f"unsupported unit for {source_name}: {unit}")
+        label = (column.get("label") or source_name).strip() or source_name
+        channel = dict(source)
+        channel["name"] = unique_channel_name(label, used_names)
+        channel["unit"] = unit
+        channel["kind"] = infer_kind(channel["name"], unit)
+        channel["height"] = column.get("height", source.get("height"))
+        channel["subtype"] = column.get("subtype") or source.get("subtype")
+        exported.append(channel)
+
+    for source in source_channels.values():
+        if source["name"] in used_source_names:
+            continue
+        channel = dict(source)
+        channel["name"] = unique_channel_name(channel["name"], used_names)
+        exported.append(channel)
+    return exported
+
+
+def unique_channel_name(name, used):
+    candidate = name
+    suffix = 2
+    while candidate in used:
+        candidate = f"{name} {suffix}"
+        suffix += 1
+    used.add(candidate)
+    return candidate
+
+
+def append_export_text(payload, offset, value, capacity=80):
+    encoded = value.encode("gb18030", errors="replace")[:capacity]
+    payload[offset] = capacity
+    start = offset + 1
+    payload[start : start + capacity] = encoded + b"\x00" * (capacity - len(encoded))
+    return offset + 1 + capacity
+
+
+def append_export_channel(payload, offset, channel):
+    offset = append_export_text(payload, offset, channel["name"], capacity=80)
+    unit = channel["unit"].encode("gb18030", errors="replace")
+    if not 1 <= len(unit) <= 5:
+        raise ValueError(f"unsupported unit for {channel['name']}: {channel['unit']}")
+    payload[offset] = len(unit)
+    payload[offset + 1 : offset + 1 + len(unit)] = unit
+    offset += 1 + len(unit)
+    payload[offset : offset + 8] = b"\x00" * 8
+    offset += 8
+    write_u32(payload, offset, channel["count"])
+    offset += 4
+    write_f32_values(payload, offset, channel["values"])
+    return offset + channel["count"] * 4
+
+
+def write_exported_windog(destination_path, payload):
+    output = b"WINDLABOG\x00\x00\x00" + zlib.compress(bytes(payload))
+    destination_dir = os.path.dirname(os.path.abspath(destination_path)) or "."
+    os.makedirs(destination_dir, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix=".windlab-save-", suffix=".windog", dir=destination_dir)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(output)
+        os.replace(temporary_path, destination_path)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise
+
+
+def export_text_as_windog(source_path, destination_path, configuration):
+    _, _, channels, start_date, time_step_minutes, row_count, _ = load_text_channels(source_path)
+    exported_channels = configured_channels_for_export(channels, row_count, configuration)
+    if not exported_channels:
+        raise ValueError("text data file contains no exportable data columns")
+
+    payload_size = 0x100 + sum(1 + 80 + 1 + len(channel["unit"].encode("gb18030")) + 8 + 4 + channel["count"] * 4 for channel in exported_channels)
+    payload = bytearray(payload_size)
+    write_f64(payload, 0x20, datetime_to_ole_date(start_date))
+    write_u32(payload, 0x28, time_step_minutes)
+    offset = 0x100
+    for channel in exported_channels:
+        offset = append_export_channel(payload, offset, channel)
+    write_exported_windog(destination_path, payload[:offset])
+    return {"saved": True, "changedFields": len(exported_channels), "exportedChannels": len(exported_channels)}
+
+
 def save_configuration(source_path, destination_path, configuration_path):
-    if is_text_data_file(source_path):
-        raise ValueError("saving is only supported for .windog files")
     with open(configuration_path, "r", encoding="utf-8") as handle:
         configuration = json.load(handle)
+    if is_text_data_file(source_path):
+        return export_text_as_windog(source_path, destination_path, configuration)
+
     with open(source_path, "rb") as handle:
         data = handle.read()
 

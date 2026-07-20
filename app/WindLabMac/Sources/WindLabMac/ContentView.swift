@@ -171,7 +171,7 @@ struct ContentView: View {
             Button("Save As...") {
                 saveWindogAs()
             }
-            .disabled(!canSaveWindog)
+            .disabled(!canSaveAsWindog)
 
             Menu("Open Recent") {
                 if fileOpenCoordinator.recentFiles.isEmpty {
@@ -311,6 +311,11 @@ struct ContentView: View {
         return loadedFileURL.pathExtension.lowercased() == "windog"
     }
 
+    private var canSaveAsWindog: Bool {
+        guard hasLoadedFile, let loadedFileURL else { return false }
+        return loadedFileURL.pathExtension.lowercased() == "windog" || isTextDataFile(loadedFileURL)
+    }
+
     private func configureTextImport(_ fileURL: URL) {
         isLoadingWindog = true
         parserError = nil
@@ -428,15 +433,15 @@ struct ContentView: View {
     }
 
     private func saveWindogAs() {
-        guard canSaveWindog, let loadedFileURL else {
-            parserError = "Save As is only supported after opening a .windog file."
+        guard canSaveAsWindog, let loadedFileURL else {
+            parserError = "Save As is only supported after opening a .windog, .txt, .csv, or .tsv file."
             return
         }
 
         let panel = NSSavePanel()
         panel.title = "Save Windographer File As"
         panel.prompt = "Save"
-        panel.nameFieldStringValue = loadedFileURL.lastPathComponent
+        panel.nameFieldStringValue = loadedFileURL.deletingPathExtension().lastPathComponent + ".windog"
         panel.allowedContentTypes = [UTType(filenameExtension: "windog")].compactMap { $0 }
         panel.allowsOtherFileTypes = false
         panel.canCreateDirectories = true
