@@ -13,9 +13,9 @@ import tempfile
 import zlib
 
 
-PARSER_VERSION = "2026-06-02-channel-stat-filter-v6"
+PARSER_VERSION = "2026-07-01-text-quality-subtype-v1"
 
-VALID_UNITS = {"m/s", "W/m2", "deg", "°", "%RH", "C", "kPa"}
+VALID_UNITS = {"m/s", "W/m2", "deg", "°", "%RH", "%", "C", "kPa"}
 
 
 CHANNEL_LAYOUTS = [
@@ -206,6 +206,35 @@ def find_payload(data):
     raise ValueError("could not locate a zlib-compressed .windog payload")
 
 
+def locate_payload(data):
+    candidates = [12]
+    candidates.extend(index for index in range(len(data) - 1) if data[index] == 0x78 and data[index + 1] in (0x01, 0x5E, 0x9C, 0xDA))
+    seen = set()
+    for offset in candidates:
+        if offset in seen:
+            continue
+        seen.add(offset)
+        decompressor = zlib.decompressobj()
+        try:
+            payload = decompressor.decompress(data[offset:]) + decompressor.flush()
+        except zlib.error:
+            continue
+        consumed = len(data[offset:]) - len(decompressor.unused_data)
+        if payload and consumed > 0:
+            return offset, offset + consumed, payload
+    raise ValueError("could not locate a zlib-compressed .windog payload")
+
+
+def encode_length_prefixed_text(payload, offset, value, field_name):
+    encoded = value.encode("gb18030")
+    maximum_length = payload[offset]
+    if len(encoded) > maximum_length:
+        raise ValueError(f"{field_name} is too long for the original .windog field ({len(encoded)} > {maximum_length} bytes)")
+    payload[offset] = len(encoded)
+    start = offset + 1
+    payload[start : start + maximum_length] = encoded + b"\x00" * (maximum_length - len(encoded))
+
+
 def read_channel(payload, layout):
     count = read_u32(payload, layout["count_offset"])
     start = layout["count_offset"] + 4
@@ -224,6 +253,9 @@ def read_channel(payload, layout):
         "height": infer_height(name),
         "count": count,
         "values": values,
+        "name_offset": layout["name_offset"],
+        "unit_offset": layout.get("unit_offset"),
+        "count_offset": layout["count_offset"],
     }
 
 
@@ -242,12 +274,16 @@ def infer_height(name):
 
 def infer_kind(name, unit):
     lowered = name.lower()
+    if any(token in lowered for token in ("quality", "reliability")) or "质量" in name or "可靠" in name:
+        return "quality"
     if "humidity" in lowered or "%rh" in lowered or "湿度" in name:
         return "humidity"
     if unit == "C" or "温度" in name:
         return "temperature"
     if unit == "kPa" or "气压" in name or "压力" in name:
         return "pressure"
+    if "z方向" in name or "vertical" in lowered or "vert." in lowered:
+        return "vertical_wind_speed"
     if unit == "m/s" or "风速" in name:
         return "wind_speed_synthesized" if "synthesized" in lowered else "wind_speed"
     if unit == "W/m2":
@@ -345,11 +381,13 @@ def infer_unit_from_label(label):
     match = re.search(r"\[([^\]]+)\]", label)
     unit = match.group(1).strip() if match else ""
     lowered = label.lower()
+    if any(token in lowered for token in ("quality", "reliability")) or "质量" in label or "可靠" in label:
+        return "%"
     if "m/s" in lowered:
         return "m/s"
     if "w/m" in lowered:
         return "W/m2"
-    if "humidity" in lowered or "%rh" in lowered or unit == "%":
+    if "humidity" in lowered or "%rh" in lowered or "湿度" in label:
         return "%RH"
     if "direction" in lowered or "dir" in lowered or unit in ("°", "deg") or "癩" in unit:
         return "deg"
@@ -376,13 +414,22 @@ def normalize_text_unit(value):
     if "%rh" in lowered or "humidity" in lowered:
         return "%RH"
     if unit == "%":
-        return "%RH"
+        return "%"
     return unit or "-"
 
 
 def clean_text_label(label):
     label = re.sub(r"\s*\[[^\]]+\]\s*$", "", label).strip()
     return label or "Unnamed"
+
+
+def text_subtype_from_label(label, unit):
+    subtype = statistic_subtype_from_text(label)
+    if subtype:
+        return subtype
+    if unit == "m/s" and ("风速" in label or "speed" in label.lower()):
+        return "Mean"
+    return None
 
 
 def find_text_header(rows):
@@ -445,7 +492,7 @@ def enrich_text_header(raw_label, sensor_metadata):
     height = infer_height(label)
     match = re.fullmatch(r"CH(\d+)(Avg|SD|Max|Min)", label, flags=re.IGNORECASE)
     if not match:
-        return label, unit, height
+        return label, unit, height, text_subtype_from_label(label, unit)
     channel_number = int(match.group(1))
     subtype = match.group(2)
     sensor = sensor_metadata.get(channel_number, {})
@@ -457,7 +504,7 @@ def enrich_text_header(raw_label, sensor_metadata):
         label = description
     else:
         label = f"{description} {subtype_label}"
-    return label, unit, height
+    return label, unit, height, subtype_label
 
 
 def load_text_channels(path):
@@ -487,7 +534,7 @@ def load_text_channels(path):
     time_step_minutes = sorted(deltas)[len(deltas) // 2] if deltas else 60
     channels = []
     for column_index, raw_label in enumerate(headers[1:], start=1):
-        label, unit, height = enrich_text_header(raw_label, sensor_metadata)
+        label, unit, height, subtype = enrich_text_header(raw_label, sensor_metadata)
         values = [
             parse_float_text(row[column_index]) if column_index < len(row) else float("nan")
             for _, row in parsed_rows
@@ -500,6 +547,8 @@ def load_text_channels(path):
                 "unit": unit,
                 "kind": infer_kind(label, unit),
                 "height": height,
+                "subtype": subtype,
+                "subtypeSource": "label" if subtype else "",
                 "count": row_count,
                 "values": values,
             }
@@ -516,8 +565,8 @@ def is_text_data_file(path):
     return os.path.splitext(path)[1].lower() in (".txt", ".csv", ".tsv")
 
 
-def previous_name(payload, unit_offset):
-    best = ""
+def previous_name_with_offset(payload, unit_offset):
+    best = ("", None)
     for offset in range(max(0, unit_offset - 240), unit_offset):
         length = payload[offset]
         if not 2 <= length <= 80 or offset + 1 + length > unit_offset:
@@ -529,8 +578,12 @@ def previous_name(payload, unit_offset):
         if any(ord(character) < 32 for character in value):
             continue
         if any(character.isalnum() or "\u4e00" <= character <= "\u9fff" for character in value):
-            best = value.strip()
+            best = (value.strip(), offset)
     return best
+
+
+def previous_name(payload, unit_offset):
+    return previous_name_with_offset(payload, unit_offset)[0]
 
 
 def nearby_text_values(payload, center, before=48, after=96):
@@ -556,7 +609,7 @@ def nearby_text_values(payload, center, before=48, after=96):
 def statistic_subtype_from_text(text):
     name = text.lower()
     tokens = [token for token in re.split(r"[^a-z0-9\u4e00-\u9fff]+", name) if token]
-    if any(token in ("sd", "std", "stdev") for token in tokens) or "std. dev" in name or "standard deviation" in name or "标准差" in text:
+    if any(token in ("sd", "std", "stdev") for token in tokens) or "std. dev" in name or "standard deviation" in name or "标准差" in text or "偏差" in text:
         return "Std. dev."
     if any(token == "min" for token in tokens) or "_min" in name or "最小" in text or "极小" in text:
         return "Min"
@@ -625,7 +678,8 @@ def scan_unit_channels(payload):
 
         values = read_f32_values(payload, data_start, count)
         text_context = nearby_text_values(payload, offset)
-        name = previous_name(payload, offset) or f"{unit} channel at 0x{offset:x}"
+        name, name_offset = previous_name_with_offset(payload, offset)
+        name = name or f"{unit} channel at 0x{offset:x}"
         subtype = statistic_subtype_from_context(text_context) or "Mean"
         channels.append(
             normalize_channel({
@@ -636,6 +690,77 @@ def scan_unit_channels(payload):
                 "subtype": subtype,
                 "count": count,
                 "values": values,
+                "name_offset": name_offset,
+                "unit_offset": offset,
+                "count_offset": count_offset,
+            })
+        )
+    return channels
+
+
+def has_sparse_valid_sample(payload, data_start, count, unit):
+    sample_count = min(count, 512)
+    if sample_count <= 0:
+        return False
+    step = max(1, count // sample_count)
+    valid_count = 0
+    for index in range(0, count, step):
+        value = read_f32(payload, data_start + index * 4)
+        if unit == "m/s":
+            if valid_wind(value):
+                valid_count += 1
+        elif math.isfinite(value) and -1000 < value < 10000:
+            valid_count += 1
+        if valid_count >= 8:
+            return True
+    return False
+
+
+def scan_sparse_unit_channels(payload):
+    channels = []
+    seen_starts = set()
+    token = b"m/s"
+    start = 0
+    while True:
+        index = payload.find(token, start)
+        if index < 0:
+            break
+        start = index + 1
+        offset = index - 1
+        if offset < 0 or payload[offset] != len(token):
+            continue
+
+        unit = "m/s"
+        count_offset = offset + 1 + len(token) + 8
+        data_start = count_offset + 4
+        if data_start + 20 > len(payload):
+            continue
+        count = read_u32(payload, count_offset)
+        if not 1000 <= count <= 1000000 or data_start + count * 4 > len(payload):
+            continue
+        if data_start in seen_starts:
+            continue
+        if not has_sparse_valid_sample(payload, data_start, count, unit):
+            continue
+        seen_starts.add(data_start)
+
+        values = read_f32_values(payload, data_start, count)
+        text_context = nearby_text_values(payload, offset)
+        name, name_offset = previous_name_with_offset(payload, offset)
+        name = name or f"{unit} channel at 0x{offset:x}"
+        subtype = statistic_subtype_from_context(text_context) or "Mean"
+        channels.append(
+            normalize_channel({
+                "name": name,
+                "unit": unit,
+                "kind": infer_kind(name, unit),
+                "height": infer_height(name) or height_from_context(text_context),
+                "subtype": subtype,
+                "count": count,
+                "values": values,
+                "name_offset": name_offset,
+                "unit_offset": offset,
+                "count_offset": count_offset,
             })
         )
     return channels
@@ -697,6 +822,9 @@ def scan_direction_channels(payload):
                     "height": infer_height(name),
                     "count": count,
                     "values": values,
+                    "name_offset": offset,
+                    "unit_offset": None,
+                    "count_offset": count_offset,
                 })
             )
             break
@@ -763,6 +891,8 @@ def finite_aligned_sample(group, max_samples=600):
 def infer_wind_speed_subtypes(channels):
     groups = {}
     for channel in channels:
+        if channel.get("subtypeSource") == "label":
+            continue
         if channel["unit"] != "m/s" or channel.get("subtype") not in (None, "", "Mean"):
             continue
         key = (channel.get("height"), channel["count"])
@@ -799,6 +929,8 @@ def infer_wind_speed_subtypes(channels):
 
 def is_average_wind_speed_channel(channel):
     if channel["unit"] != "m/s":
+        return False
+    if channel["kind"] not in ("wind_speed", "wind_speed_synthesized"):
         return False
     if is_statistical_channel(channel):
         return False
@@ -1108,8 +1240,12 @@ def time_series_colors():
 def data_column_type(channel):
     kind = channel["kind"]
     unit = channel["unit"]
+    if kind == "quality":
+        return "Quality"
     if kind == "wind_direction":
         return "Wind Direction"
+    if kind == "vertical_wind_speed":
+        return "Vert. Wind Speed"
     if unit == "m/s":
         return "Wind Speed"
     if unit == "%RH":
@@ -1127,7 +1263,7 @@ def data_column_subtype(channel):
     if channel.get("subtype"):
         return channel["subtype"]
     name = channel["name"].lower()
-    if any(token in name for token in ("_sd", "_std", " std", "sd", "std")) or "标准差" in channel["name"]:
+    if any(token in name for token in ("_sd", "_std", " std", "sd", "std")) or "标准差" in channel["name"] or "偏差" in channel["name"]:
         return "Std. dev."
     if any(token in name for token in ("_min", " min")) or "最小" in channel["name"] or "极小" in channel["name"]:
         return "Min"
@@ -1256,9 +1392,9 @@ def associated_columns(channel, channels):
         if speed_candidates and height is not None:
             speed = min(speed_candidates, key=lambda item: abs((item.get("height") or 0) - height))["name"]
     return {
-        "stdDev": find_token(("_sd", "_std", " std")),
-        "min": find_token(("_min", " min")),
-        "max": find_token(("_max", " max")),
+        "stdDev": find_token(("_sd", "_std", " std", "偏差")),
+        "min": find_token(("_min", " min", "最小")),
+        "max": find_token(("_max", " max", "最大")),
         "speed": speed,
     }
 
@@ -1370,6 +1506,8 @@ def load_windog_channels(path):
             continue
     scanned_channels = scan_unit_channels(payload)
     channels = scanned_channels or fixed_channels
+    if not channels:
+        channels = scan_sparse_unit_channels(payload)
     channels.extend(scan_direction_channels(payload))
     infer_wind_speed_subtypes(channels)
     return offset, payload, channels
@@ -1420,6 +1558,58 @@ def build_configuration_only(path):
     full_length_channels = full_length_visible_channels(channels, row_count)
     end_date = start_date + dt.timedelta(minutes=time_step_minutes * row_count)
     return build_configuration(path, full_length_channels, start_date, end_date, time_step_minutes, row_count, metadata)
+
+
+def save_configuration(source_path, destination_path, configuration_path):
+    if is_text_data_file(source_path):
+        raise ValueError("saving is only supported for .windog files")
+    with open(configuration_path, "r", encoding="utf-8") as handle:
+        configuration = json.load(handle)
+    with open(source_path, "rb") as handle:
+        data = handle.read()
+
+    payload_start, payload_end, payload = locate_payload(data)
+    payload = bytearray(payload)
+    _, _, channels = load_windog_channels(source_path)
+    channels_by_name = {}
+    for channel in channels:
+        channels_by_name.setdefault(channel["name"], channel)
+
+    changed = 0
+    for column in configuration.get("columns", []):
+        original_name = column.get("id") or ""
+        channel = channels_by_name.get(original_name)
+        if not channel:
+            continue
+
+        label = (column.get("label") or original_name).strip()
+        if label and label != original_name and channel.get("name_offset") is not None:
+            encode_length_prefixed_text(payload, channel["name_offset"], label, f"label for {original_name}")
+            changed += 1
+
+        unit = (column.get("unit") or channel.get("unit") or "").strip()
+        if unit and unit != channel.get("unit") and channel.get("unit_offset") is not None:
+            if unit not in VALID_UNITS:
+                raise ValueError(f"unsupported unit for {original_name}: {unit}")
+            encode_length_prefixed_text(payload, channel["unit_offset"], unit, f"unit for {original_name}")
+            changed += 1
+
+    compressed = zlib.compress(bytes(payload))
+    output = data[:payload_start] + compressed + data[payload_end:]
+    destination_dir = os.path.dirname(os.path.abspath(destination_path)) or "."
+    os.makedirs(destination_dir, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix=".windlab-save-", suffix=".windog", dir=destination_dir)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(output)
+        os.replace(temporary_path, destination_path)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise
+    return {"saved": True, "changedFields": changed}
 
 
 def parse_optional_date(value):
@@ -2002,6 +2192,13 @@ def build_sections(path, payload, compressed_offset, channels, start_date=None, 
 
 
 def main():
+    if len(sys.argv) == 5 and sys.argv[1] == "--save-config":
+        try:
+            print(json.dumps(save_configuration(sys.argv[2], sys.argv[3], sys.argv[4]), ensure_ascii=False))
+        except Exception as error:
+            fail(str(error))
+        return
+
     if len(sys.argv) == 3 and sys.argv[1] == "--configuration":
         try:
             print(json.dumps(build_configuration_only(sys.argv[2]), ensure_ascii=False))

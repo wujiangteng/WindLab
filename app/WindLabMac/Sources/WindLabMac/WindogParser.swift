@@ -187,6 +187,23 @@ enum WindogParser {
         try runParser(arguments: ["--configuration", fileURL.path], outputType: DecodedDataSetConfiguration.self)
     }
 
+    static func saveConfiguration(sourceURL: URL, destinationURL: URL, configuration: DataSetConfiguration) throws {
+        let encoder = JSONEncoder()
+        let payload = try encoder.encode(EncodableDataSetConfiguration(configuration))
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("windlab-save-\(UUID().uuidString)")
+            .appendingPathExtension("json")
+        try payload.write(to: temporaryURL, options: .atomic)
+        defer {
+            try? FileManager.default.removeItem(at: temporaryURL)
+        }
+
+        _ = try runParser(
+            arguments: ["--save-config", sourceURL.path, destinationURL.path, temporaryURL.path],
+            outputType: SaveResult.self
+        )
+    }
+
     static func parseWindRose(
         fileURL: URL,
         display: String,
@@ -349,5 +366,79 @@ enum WindogParser {
 
     private struct ParserErrorEnvelope: Decodable {
         let error: String?
+    }
+
+    private struct SaveResult: Decodable {
+        let saved: Bool
+    }
+}
+
+private struct EncodableDataSetConfiguration: Encodable {
+    let columns: [EncodableDataColumnConfiguration]
+    let dataSet: EncodableDataSetInformation
+
+    init(_ configuration: DataSetConfiguration) {
+        columns = configuration.columns.map(EncodableDataColumnConfiguration.init)
+        dataSet = EncodableDataSetInformation(configuration.dataSet)
+    }
+}
+
+private struct EncodableDataColumnConfiguration: Encodable {
+    let id: String
+    let label: String
+    let unit: String
+    let type: String
+    let subtype: String
+    let colorName: String
+    let height: Double?
+    let visible: Bool
+    let associated: EncodableAssociatedColumns
+
+    init(_ column: DataColumnConfiguration) {
+        id = column.id
+        label = column.label
+        unit = column.unit
+        type = column.type
+        subtype = column.subtype
+        colorName = column.colorName
+        height = column.height
+        visible = column.visible
+        associated = EncodableAssociatedColumns(column.associated)
+    }
+}
+
+private struct EncodableAssociatedColumns: Encodable {
+    let stdDev: String
+    let min: String
+    let max: String
+    let speed: String
+
+    init(_ associated: AssociatedColumns) {
+        stdDev = associated.stdDev
+        min = associated.min
+        max = associated.max
+        speed = associated.speed
+    }
+}
+
+private struct EncodableDataSetInformation: Encodable {
+    let name: String
+    let description: String
+    let latitude: Double
+    let longitude: Double
+    let elevation: Double
+    let calmThreshold: Double
+    let invalidValue: Double
+    let timestampsIndicate: String
+
+    init(_ dataSet: DataSetInformation) {
+        name = dataSet.name
+        description = dataSet.description
+        latitude = dataSet.latitude
+        longitude = dataSet.longitude
+        elevation = dataSet.elevation
+        calmThreshold = dataSet.calmThreshold
+        invalidValue = dataSet.invalidValue
+        timestampsIndicate = dataSet.timestampsIndicate
     }
 }

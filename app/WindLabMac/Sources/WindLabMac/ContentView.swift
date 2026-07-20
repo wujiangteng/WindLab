@@ -20,6 +20,9 @@ struct ContentView: View {
     @State private var isLoadingConfiguration = false
     @State private var dataSetConfiguration = DataSetConfiguration.empty
     @State private var pendingTextImportURL: URL?
+    @State private var lastOpenPanelRequestID = 0
+    @State private var lastSaveRequestID = 0
+    @State private var lastSaveAsRequestID = 0
 
     private let tabs = ["Summary", "Time Series", "Wind Rose", "Diurnal Profile", "Histogram", "Scatter Plot", "Tables", "Reports"]
     private let toolbarItems: [(String, String)] = [
@@ -102,9 +105,6 @@ struct ContentView: View {
             }
             .id(dataSetConfiguration.columns.map(\.id).joined(separator: "\u{1f}"))
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openWindogRequested)) { _ in
-            openWindogFile()
-        }
         .onAppear {
             openPendingWindogURL()
         }
@@ -114,11 +114,29 @@ struct ContentView: View {
         .onReceive(fileOpenCoordinator.$requestedURL.compactMap { $0 }) { url in
             openPendingWindogURL(url)
         }
+        .onReceive(fileOpenCoordinator.$openPanelRequestID) { requestID in
+            guard requestID != lastOpenPanelRequestID else { return }
+            lastOpenPanelRequestID = requestID
+            guard requestID > 0 else { return }
+            openWindogFile()
+        }
+        .onReceive(fileOpenCoordinator.$saveRequestID) { requestID in
+            guard requestID != lastSaveRequestID else { return }
+            lastSaveRequestID = requestID
+            guard requestID > 0 else { return }
+            saveWindog()
+        }
+        .onReceive(fileOpenCoordinator.$saveAsRequestID) { requestID in
+            guard requestID != lastSaveAsRequestID else { return }
+            lastSaveAsRequestID = requestID
+            guard requestID > 0 else { return }
+            saveWindogAs()
+        }
     }
 
     private var menuStrip: some View {
         HStack(spacing: 22) {
-            MenuText("File", action: openWindogFile)
+            fileMenu
             MenuText("View")
             MenuText("Revise")
             MenuText("Flag")
@@ -139,12 +157,52 @@ struct ContentView: View {
         }
     }
 
+    private var fileMenu: some View {
+        Menu {
+            Button("Open Windographer File...") {
+                openWindogFile()
+            }
+
+            Button("Save") {
+                saveWindog()
+            }
+            .disabled(!canSaveWindog)
+
+            Button("Save As...") {
+                saveWindogAs()
+            }
+            .disabled(!canSaveWindog)
+
+            Menu("Open Recent") {
+                if fileOpenCoordinator.recentFiles.isEmpty {
+                    Text("No Recent Files")
+                } else {
+                    ForEach(fileOpenCoordinator.recentFiles, id: \.self) { url in
+                        Button(url.lastPathComponent) {
+                            openWindogURL(url)
+                        }
+                        .help(url.path)
+                    }
+                }
+            }
+        } label: {
+            Text("File")
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+                .underline()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
     private var iconToolbar: some View {
         HStack(spacing: 5) {
             ForEach(toolbarItems, id: \.1) { item in
                 Button {
                     if item.1 == "Open" {
                         openWindogFile()
+                    } else if item.1 == "Save" {
+                        saveWindog()
                     } else if item.1 == "Histogram" {
                         showsDistributionAnalysis = true
                     } else if item.1 == "Configuration" {
@@ -248,6 +306,11 @@ struct ContentView: View {
         ["txt", "csv", "tsv"].contains(fileURL.pathExtension.lowercased())
     }
 
+    private var canSaveWindog: Bool {
+        guard hasLoadedFile, let loadedFileURL else { return false }
+        return loadedFileURL.pathExtension.lowercased() == "windog"
+    }
+
     private func configureTextImport(_ fileURL: URL) {
         isLoadingWindog = true
         parserError = nil
@@ -262,6 +325,7 @@ struct ContentView: View {
                 let decoded = try WindogParser.parseConfiguration(fileURL: fileURL)
                 await MainActor.run {
                     dataSetConfiguration = DataSetConfiguration(decoded: decoded)
+                    fileOpenCoordinator.noteOpened(fileURL)
                     isLoadingWindog = false
                     DispatchQueue.main.async {
                         showsConfiguration = true
@@ -307,6 +371,7 @@ struct ContentView: View {
                         applyConfiguration(dataSetConfiguration)
                     }
                     loadedFileName = summary.fileName
+                    fileOpenCoordinator.noteOpened(fileURL)
                     hasLoadedFile = true
                     isLoadingWindog = false
                 }
@@ -352,6 +417,67 @@ struct ContentView: View {
         let shear = ShearComputation(columns: updated.columns)
         chartData = sourceChartData.applying(configuration: updated, shear: shear)
         propertySections = sourcePropertySections.applying(dataSet: updated.dataSet, shear: shear)
+    }
+
+    private func saveWindog() {
+        guard canSaveWindog, let loadedFileURL else {
+            parserError = "Saving is only supported after opening a .windog file."
+            return
+        }
+        saveWindog(to: loadedFileURL, reopenSavedFile: false)
+    }
+
+    private func saveWindogAs() {
+        guard canSaveWindog, let loadedFileURL else {
+            parserError = "Save As is only supported after opening a .windog file."
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "Save Windographer File As"
+        panel.prompt = "Save"
+        panel.nameFieldStringValue = loadedFileURL.lastPathComponent
+        panel.allowedContentTypes = [UTType(filenameExtension: "windog")].compactMap { $0 }
+        panel.allowsOtherFileTypes = false
+        panel.canCreateDirectories = true
+
+        panel.begin { response in
+            guard response == .OK, let destinationURL = panel.url else {
+                return
+            }
+            saveWindog(to: destinationURL, reopenSavedFile: true)
+        }
+    }
+
+    private func saveWindog(to destinationURL: URL, reopenSavedFile: Bool) {
+        guard let sourceURL = loadedFileURL else { return }
+        isLoadingWindog = true
+        parserError = nil
+        let configuration = dataSetConfiguration
+
+        Task.detached {
+            do {
+                try WindogParser.saveConfiguration(
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
+                    configuration: configuration
+                )
+                await MainActor.run {
+                    fileOpenCoordinator.noteOpened(destinationURL)
+                    isLoadingWindog = false
+                    if reopenSavedFile {
+                        loadWindog(destinationURL)
+                    } else {
+                        loadWindog(sourceURL, preserveConfiguration: true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    parserError = error.localizedDescription
+                    isLoadingWindog = false
+                }
+            }
+        }
     }
 
     private var chartsView: some View {
@@ -475,10 +601,6 @@ struct MenuText: View {
         }
         .buttonStyle(.plain)
     }
-}
-
-extension Notification.Name {
-    static let openWindogRequested = Notification.Name("openWindogRequested")
 }
 
 extension AppChartData {

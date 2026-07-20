@@ -4,10 +4,41 @@ import SwiftUI
 final class WindLabFileOpenCoordinator: ObservableObject {
     static let shared = WindLabFileOpenCoordinator()
 
+    @Published private(set) var openPanelRequestID = 0
+    @Published private(set) var saveRequestID = 0
+    @Published private(set) var saveAsRequestID = 0
     @Published var requestedURL: URL?
+    @Published private(set) var recentFiles: [URL]
+
+    private let recentFilesKey = "recentWindogFiles"
+
+    private init() {
+        let paths = UserDefaults.standard.stringArray(forKey: recentFilesKey) ?? []
+        recentFiles = paths.map(URL.init(fileURLWithPath:))
+    }
+
+    func requestOpenPanel() {
+        openPanelRequestID += 1
+    }
+
+    func requestSave() {
+        saveRequestID += 1
+    }
+
+    func requestSaveAs() {
+        saveAsRequestID += 1
+    }
 
     func open(_ url: URL) {
         requestedURL = url
+    }
+
+    func noteOpened(_ url: URL) {
+        let fileURL = url.standardizedFileURL
+        recentFiles.removeAll { $0.standardizedFileURL.path == fileURL.path }
+        recentFiles.insert(fileURL, at: 0)
+        recentFiles = Array(recentFiles.prefix(10))
+        UserDefaults.standard.set(recentFiles.map(\.path), forKey: recentFilesKey)
     }
 }
 
@@ -45,9 +76,32 @@ struct WindLabMacApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Windographer File...") {
-                    NotificationCenter.default.post(name: .openWindogRequested, object: nil)
+                    fileOpenCoordinator.requestOpenPanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Button("Save") {
+                    fileOpenCoordinator.requestSave()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+
+                Button("Save As...") {
+                    fileOpenCoordinator.requestSaveAs()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Menu("Open Recent") {
+                    if fileOpenCoordinator.recentFiles.isEmpty {
+                        Text("No Recent Files")
+                    } else {
+                        ForEach(fileOpenCoordinator.recentFiles, id: \.self) { url in
+                            Button(url.lastPathComponent) {
+                                fileOpenCoordinator.open(url)
+                            }
+                            .help(url.path)
+                        }
+                    }
+                }
             }
 
             CommandMenu("Revise") {
