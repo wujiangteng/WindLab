@@ -13,6 +13,9 @@ struct ContentView: View {
     @State private var loadedFileName = "No file loaded"
     @State private var parserError: String?
     @State private var isLoadingWindog = false
+    @State private var loadingProgress = 0.0
+    @State private var loadingMessage = "Preparing wind data..."
+    @State private var loadingProgressTask: Task<Void, Never>?
     @State private var hasLoadedFile = false
     @State private var loadedFileURL: URL?
     @State private var showsDistributionAnalysis = false
@@ -75,6 +78,8 @@ struct ContentView: View {
                 EmptyFileView(
                     parserError: parserError,
                     isLoading: isLoadingWindog,
+                    loadingProgress: loadingProgress,
+                    loadingMessage: loadingMessage,
                     openAction: openWindogFile,
                     openURLAction: openWindogURL
                 )
@@ -317,7 +322,7 @@ struct ContentView: View {
     }
 
     private func configureTextImport(_ fileURL: URL) {
-        isLoadingWindog = true
+        beginLoading(message: "Reading text data...")
         parserError = nil
         hasLoadedFile = false
         loadedFileName = fileURL.lastPathComponent
@@ -329,25 +334,25 @@ struct ContentView: View {
             do {
                 let decoded = try WindogParser.parseConfiguration(fileURL: fileURL)
                 await MainActor.run {
-                    dataSetConfiguration = DataSetConfiguration(decoded: decoded)
-                    fileOpenCoordinator.noteOpened(fileURL)
-                    isLoadingWindog = false
-                    DispatchQueue.main.async {
+                    completeLoading {
+                        dataSetConfiguration = DataSetConfiguration(decoded: decoded)
+                        fileOpenCoordinator.noteOpened(fileURL)
                         showsConfiguration = true
                     }
                 }
             } catch {
                 await MainActor.run {
-                    parserError = error.localizedDescription
-                    isLoadingWindog = false
-                    pendingTextImportURL = nil
+                    completeLoading {
+                        parserError = error.localizedDescription
+                        pendingTextImportURL = nil
+                    }
                 }
             }
         }
     }
 
     private func loadWindog(_ fileURL: URL, preserveConfiguration: Bool = false) {
-        isLoadingWindog = true
+        beginLoading(message: isTextDataFile(fileURL) ? "Parsing text data..." : "Parsing Windographer file...")
         parserError = nil
         loadedFileName = fileURL.lastPathComponent
         loadedFileURL = fileURL
@@ -367,25 +372,66 @@ struct ContentView: View {
                     )
                 }
                 await MainActor.run {
-                    let parsedCharts = AppChartData(decoded: summary.charts)
-                    sourcePropertySections = sections
-                    sourceChartData = parsedCharts
-                    propertySections = sections
-                    chartData = parsedCharts
-                    if preserveConfiguration {
-                        applyConfiguration(dataSetConfiguration)
+                    completeLoading {
+                        let parsedCharts = AppChartData(decoded: summary.charts)
+                        sourcePropertySections = sections
+                        sourceChartData = parsedCharts
+                        propertySections = sections
+                        chartData = parsedCharts
+                        if preserveConfiguration {
+                            applyConfiguration(dataSetConfiguration)
+                        }
+                        loadedFileName = summary.fileName
+                        fileOpenCoordinator.noteOpened(fileURL)
+                        hasLoadedFile = true
                     }
-                    loadedFileName = summary.fileName
-                    fileOpenCoordinator.noteOpened(fileURL)
-                    hasLoadedFile = true
-                    isLoadingWindog = false
                 }
             } catch {
                 await MainActor.run {
-                    parserError = error.localizedDescription
-                    isLoadingWindog = false
+                    completeLoading {
+                        parserError = error.localizedDescription
+                    }
                 }
             }
+        }
+    }
+
+    private func beginLoading(message: String) {
+        loadingProgressTask?.cancel()
+        loadingMessage = message
+        loadingProgress = 0.04
+        isLoadingWindog = true
+        loadingProgressTask = Task { @MainActor in
+            let messages = [
+                (0.20, message),
+                (0.45, "Reading data columns..."),
+                (0.68, "Calculating summaries..."),
+                (0.86, "Preparing charts...")
+            ]
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { break }
+                let remaining = max(0, 0.96 - loadingProgress)
+                let increment = max(0.004, remaining * 0.035)
+                withAnimation(.linear(duration: 0.18)) {
+                    loadingProgress = min(0.96, loadingProgress + increment)
+                    loadingMessage = messages.last(where: { loadingProgress >= $0.0 })?.1 ?? message
+                }
+            }
+        }
+    }
+
+    private func completeLoading(_ updates: @escaping () -> Void) {
+        loadingProgressTask?.cancel()
+        loadingProgressTask = nil
+        withAnimation(.linear(duration: 0.14)) {
+            loadingProgress = 1.0
+            loadingMessage = "Finishing..."
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            updates()
+            isLoadingWindog = false
+            loadingProgress = 0
         }
     }
 
@@ -973,6 +1019,8 @@ struct ToolIconButtonStyle: ButtonStyle {
 struct EmptyFileView: View {
     let parserError: String?
     let isLoading: Bool
+    let loadingProgress: Double
+    let loadingMessage: String
     let openAction: () -> Void
     let openURLAction: (URL) -> Void
 
@@ -993,10 +1041,10 @@ struct EmptyFileView: View {
 
             if isLoading {
                 VStack(spacing: 6) {
-                    ProgressView(value: 0.65)
+                    ProgressView(value: loadingProgress)
                         .progressViewStyle(.linear)
                         .frame(width: 260)
-                    Text("Loading and parsing wind data...")
+                    Text(loadingMessage)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
