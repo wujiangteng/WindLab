@@ -1885,29 +1885,76 @@ def build_wind_rose_series(path, display, versus, sectors, direction_id, data_id
 
 
 def weibull_mle(values):
-    samples = [value for value in values if value > 0 and math.isfinite(value)]
-    if len(samples) < 2:
+    samples = [max(value, 1e-6) for value in values if value >= 0 and math.isfinite(value)]
+    if not samples:
         return None
-    log_values = [math.log(value) for value in samples]
-    mean_log = sum(log_values) / len(log_values)
-    k = 2.0
-    for _ in range(60):
-        xk = [value ** k for value in samples]
-        sum_xk = sum(xk)
-        if sum_xk <= 0:
-            return None
-        weighted_log = sum(power * log_value for power, log_value in zip(xk, log_values)) / sum_xk
-        denominator = weighted_log - mean_log
-        if denominator <= 1e-12:
+    mean_value = sum(samples) / len(samples)
+    sd = math.sqrt(sum((value - mean_value) ** 2 for value in samples) / (len(samples) - 1)) if len(samples) >= 2 else 0.0
+    if mean_value <= 0:
+        return None
+    cv = sd / mean_value
+    if cv <= 0:
+        return None
+
+    log_sum = sum(math.log(value) for value in samples)
+
+    def negative_log_likelihood(k, scale):
+        if k <= 0 or scale <= 0:
+            return float("inf")
+        n = len(samples)
+        try:
+            return -(
+                n * math.log(k)
+                - n * k * math.log(scale)
+                + (k - 1) * log_sum
+                - sum((value / scale) ** k for value in samples)
+            )
+        except (OverflowError, ValueError):
+            return float("inf")
+
+    def bounded(point):
+        k, scale = point
+        return [max(0.1, min(10.0, k)), max(0.1, scale)]
+
+    k0 = max(0.2, min(10.0, cv ** -1.086))
+    simplex = [
+        [k0, mean_value],
+        [min(10.0, k0 * 1.05), mean_value],
+        [k0, mean_value * 1.05],
+    ]
+    values_nll = [negative_log_likelihood(k, scale) for k, scale in simplex]
+
+    for _ in range(220):
+        order = sorted(range(3), key=lambda index: values_nll[index])
+        simplex = [simplex[index] for index in order]
+        values_nll = [values_nll[index] for index in order]
+        best, second, worst = simplex
+        if max(abs(values_nll[index] - values_nll[0]) for index in range(1, 3)) < 1e-7:
             break
-        new_k = 1.0 / denominator
-        if not math.isfinite(new_k) or new_k <= 0:
-            break
-        if abs(new_k - k) < 1e-7:
-            k = new_k
-            break
-        k = new_k
-    scale = (sum(value ** k for value in samples) / len(samples)) ** (1.0 / k)
+
+        centroid = [(best[0] + second[0]) / 2, (best[1] + second[1]) / 2]
+        reflected = bounded([centroid[0] + (centroid[0] - worst[0]), centroid[1] + (centroid[1] - worst[1])])
+        reflected_value = negative_log_likelihood(reflected[0], reflected[1])
+
+        if reflected_value < values_nll[0]:
+            expanded = bounded([centroid[0] + 2 * (reflected[0] - centroid[0]), centroid[1] + 2 * (reflected[1] - centroid[1])])
+            expanded_value = negative_log_likelihood(expanded[0], expanded[1])
+            simplex[2], values_nll[2] = (expanded, expanded_value) if expanded_value < reflected_value else (reflected, reflected_value)
+        elif reflected_value < values_nll[1]:
+            simplex[2], values_nll[2] = reflected, reflected_value
+        else:
+            contracted = bounded([centroid[0] + 0.5 * (worst[0] - centroid[0]), centroid[1] + 0.5 * (worst[1] - centroid[1])])
+            contracted_value = negative_log_likelihood(contracted[0], contracted[1])
+            if contracted_value < values_nll[2]:
+                simplex[2], values_nll[2] = contracted, contracted_value
+            else:
+                simplex[1] = bounded([best[0] + 0.5 * (simplex[1][0] - best[0]), best[1] + 0.5 * (simplex[1][1] - best[1])])
+                simplex[2] = bounded([best[0] + 0.5 * (simplex[2][0] - best[0]), best[1] + 0.5 * (simplex[2][1] - best[1])])
+                values_nll[1] = negative_log_likelihood(simplex[1][0], simplex[1][1])
+                values_nll[2] = negative_log_likelihood(simplex[2][0], simplex[2][1])
+
+    best_index = min(range(3), key=lambda index: values_nll[index])
+    k, scale = simplex[best_index]
     return k, scale
 
 
